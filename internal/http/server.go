@@ -4,25 +4,29 @@ import (
 	"context"
 	"net/http"
 
+	peasant "github.com/candango/gopeasant"
+	"github.com/candango/gopeasant/dummy"
 	"github.com/candango/httpok"
+	middleware "github.com/candango/httpok/middleware"
 )
 
 type NoncedServer struct {
 	*httpok.GracefulServer
-	Count int
+	peasant.NonceService
 }
 
 func NewNoncedServer(ctx context.Context) *NoncedServer {
+	service := dummy.NewDummyInMemoryNonceService()
 	s := &NoncedServer{
 		GracefulServer: &httpok.GracefulServer{
 			Name: "Cafofo Bastion",
 			Server: &http.Server{
 				Addr: ":8080",
 			},
-			Context:   ctx,
-			RunLogger: &logrusRunLogger{},
+			Context: ctx,
+			Logger:  &logrusRunLogger{},
 		},
-		Count: 0,
+		NonceService: service,
 	}
 	s.buildHandler()
 	return s
@@ -32,5 +36,9 @@ func (s *NoncedServer) buildHandler() {
 	mux := http.NewServeMux()
 	mux.Handle("/directory/", http.StripPrefix("/directory", NewDirectoryHandler()))
 	mux.Handle("/new-nonce/", http.StripPrefix("/new-nonce", NewNonceHandler()))
-	s.Handler = httpok.Chain(mux)
+	mux.Handle("/security/", http.StripPrefix("/security", peasant.Nonced(NewSecurityHandler(), s.NonceService)))
+	s.Handler = middleware.Chain(mux,
+		middleware.Logging(s.Logger),
+		peasant.NonceServed(s.NonceService, ""),
+	)
 }

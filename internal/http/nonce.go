@@ -3,20 +3,8 @@ package http
 import (
 	"net/http"
 
-	"math/rand"
+	peasant "github.com/candango/gopeasant"
 )
-
-func randomString(s int) string {
-	asciiLower := "abcdefghijklmnopqrstuvwxyz"
-	asciiUpper := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	digits := "012345679"
-	chars := []rune(asciiLower + asciiUpper + digits)
-	r := make([]rune, s)
-	for i := range r {
-		r[i] = chars[rand.Intn(len(chars))]
-	}
-	return string(r)
-}
 
 type NonceHandler struct {
 	*http.ServeMux
@@ -31,5 +19,18 @@ func NewNonceHandler() *NonceHandler {
 }
 
 func (h *NonceHandler) newNonce(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("nonce", randomString(45))
+	log := &logrusRunLogger{}
+	s, ok := r.Context().Value("nonce-service").(peasant.NonceService)
+	if !ok {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Errorf("nonce service not present in the context")
+		return
+	}
+	nonce, err := s.GetNonce(r)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Errorf("error getting a new nonce %v", err)
+		return
+	}
+	w.Header().Add("nonce", nonce)
 }
